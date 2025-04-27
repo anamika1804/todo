@@ -1,0 +1,58 @@
+/* styles.css */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(5px); /* Blur only the background */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+  
+  .modal-content {
+    background: #1a202c;
+    padding: 20px;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    z-index: 1001;
+    backdrop-filter: none; /* No blur on the modal content */
+  }
+  
+  .modal-content input {
+    width: 100%;
+    margin-bottom: 10px;
+    backdrop-filter: none; /* Ensure input is not blurred */
+  }
+  
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5" viewBox="0 0 10 5"><path fill="gray" d="M0 0h10L5 5z"/></svg>') no-repeat right 8px center;
+    padding: 4px 24px 4px 8px;
+    border: 1px solid #4a5568;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  
+  select:focus {
+    outline: none;
+    border-color: #4299e1;
+    box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.5);
+  }
+  
+  /* Style for blue call icon */
+  .call-icon {
+    color: #4299e1; /* Tailwind's blue-500 */
+    background: none;
+    border: none;
+    cursor: pointer;
+  }

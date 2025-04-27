@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import './styles.css';
 
 interface Conversation {
   id: string;
@@ -8,6 +9,8 @@ interface Conversation {
   participants: string[];
   status: string;
   resolved: boolean;
+  inbox: string;
+  label?: string;
 }
 
 interface Message {
@@ -16,15 +19,17 @@ interface Message {
   sender: string;
   content: string;
   timestamp: string;
+  attachment?: string;
+  attachmentUrl?: string;
 }
 
 const conversations: Conversation[] = [
-  { id: '1', type: 'General', participants: ['Admin', 'Tanya Lamba'], status: 'Open', resolved: false },
-  { id: '2', type: 'Order #627852', participants: ['Admin', 'Tanya Lamba'], status: 'Open', resolved: true },
-  { id: '3', type: 'General', participants: ['Admin', 'Gurav'], status: 'Open', resolved: false },
-  { id: '4', type: 'Order #627853', participants: ['Contractor', 'Admin'], status: 'Open', resolved: false },
-  { id: '5', type: 'General', participants: ['Worker', 'Admin'], status: 'Open', resolved: true },
-  { id: '6', type: 'Order #627854', participants: ['Worker', 'Admin'], status: 'Open', resolved: false },
+  { id: '1', type: 'General', participants: ['Admin', 'Tanya Lamba'], status: 'Open', resolved: false, inbox: 'Medicine Delivery', label: 'order_received' },
+  { id: '2', type: 'Order #627852', participants: ['Admin', 'Tanya Lamba'], status: 'Open', resolved: true, inbox: 'Medicine Delivery', label: 'order_billed' },
+  { id: '3', type: 'General', participants: ['Admin', 'Gurav'], status: 'Open', resolved: false, inbox: 'Support', label: 'order_delivered' },
+  { id: '4', type: 'Order #627853', participants: ['Contractor', 'Admin'], status: 'Open', resolved: false, inbox: 'Medicine Delivery', label: 'order_received' },
+  { id: '5', type: 'General', participants: ['Worker', 'Admin'], status: 'Open', resolved: true, inbox: 'Support', label: 'order_billed' },
+  { id: '6', type: 'Order #627854', participants: ['Worker', 'Admin'], status: 'Open', resolved: false, inbox: 'Medicine Delivery', label: 'order_delivered' },
 ];
 
 const messages: Message[] = [
@@ -35,6 +40,9 @@ const messages: Message[] = [
   { id: 'm5', conversationId: '5', sender: 'Worker', content: 'General query...', timestamp: 'Apr 24, 16:40 PM' },
   { id: 'm6', conversationId: '6', sender: 'Worker', content: 'Order #627854 details...', timestamp: 'Apr 24, 16:35 PM' },
 ];
+
+// Function to generate a unique message ID
+const generateMessageId = () => `m${Date.now()}`;
 
 const orderDetails: { [key: string]: { items: string[], total: string, shipping: string, netPayable: string } } = {
   '2': {
@@ -62,26 +70,39 @@ const getInitials = (name: string) => {
   return name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
 };
 
+// Function to get label color based on label type
+const getLabelColor = (label: string | undefined) => {
+  switch (label) {
+    case 'order_received':
+      return 'bg-green-500';
+    case 'order_billed':
+      return 'bg-blue-500';
+    case 'order_delivered':
+      return 'bg-yellow-500';
+    default:
+      return 'bg-gray-500';
+  }
+};
+
 const Dashboard: React.FC = () => {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
-  const [activeProfile, setActiveProfile] = useState<'admin' | 'user' | 'contractor' | 'worker'>('admin');
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('newest');
-  const [chatView, setChatView] = useState<'messages' | 'order'>('messages');
-  const [conversationStates, setConversationStates] = useState<{ [key: string]: boolean }>(
-    conversations.reduce((acc, conv) => ({ ...acc, [conv.id]: conv.resolved }), {})
+  const [chatView, setChatView] = useState<'messages' | 'order' | 'profile'>('messages');
+  const [conversationStates, setConversationStates] = useState<{ [key: string]: string }>(
+    conversations.reduce((acc, conv) => ({ ...acc, [conv.id]: conv.resolved ? 'Resolved' : 'Unresolved' }), {})
   );
+  const [showLogout, setShowLogout] = useState(false);
+  const [messageInput, setMessageInput] = useState('');
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [showSearchModal, setShowSearchModal] = useState(false);
 
-  const filterConversations = (profile: string) => {
-    if (profile === 'admin') return conversations;
-    if (profile === 'user') return conversations.filter(conv => conv.participants.includes('Admin') && conv.participants.some(p => ['Tanya Lamba', 'Gurav'].includes(p)));
-    if (profile === 'contractor') return conversations.filter(conv => conv.participants.includes('Admin') && conv.participants.some(p => ['Contractor'].includes(p)));
-    if (profile === 'worker') return conversations.filter(conv => conv.participants.includes('Admin') && conv.participants.some(p => ['Worker'].includes(p)));
-    return [];
-  };
+  const filteredConversations = selectedLabel
+    ? conversations.filter(conv => conv.label === selectedLabel)
+    : conversations;
 
-  const filteredConversations = filterConversations(activeProfile);
   const filteredMessages = messages
     .filter(msg => filteredConversations.some(conv => conv.id === msg.conversationId))
     .filter(msg => msg.content.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -99,68 +120,157 @@ const Dashboard: React.FC = () => {
     setSort(sort === 'newest' ? 'oldest' : 'newest');
   };
 
-  const toggleResolved = (conversationId: string) => {
-    setConversationStates(prev => ({
-      ...prev,
-      [conversationId]: !prev[conversationId],
-    }));
+  const handleLabelClick = (label: string) => {
+    setSelectedLabel(selectedLabel === label ? null : label);
+  };
+
+  const handleSendMessage = () => {
+    if (messageInput.trim() || attachment) {
+      const newMessage: Message = {
+        id: generateMessageId(),
+        conversationId: selectedConversation!,
+        sender: 'Admin',
+        content: messageInput.trim(),
+        timestamp: new Date().toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        }),
+        attachment: attachment ? attachment.name : undefined,
+        attachmentUrl: attachment ? URL.createObjectURL(attachment) : undefined,
+      };
+      messages.push(newMessage);
+      setMessageInput('');
+      setAttachment(null);
+    }
+  };
+
+  const handleAttachmentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      if (file.type.startsWith('image/')) {
+        setAttachment(file);
+      } else {
+        alert('Please select an image file (e.g., PNG, JPEG).');
+      }
+    }
+  };
+
+  const handleCall = (participants: string[]) => {
+    // Simulate a call action (replace with actual call functionality as needed)
+    alert(`Initiating call with ${ participants.join(' and ') }...`);
   };
 
   return (
-    <div className="flex h-screen bg-gray-900 text-white">
-      {/* Profile Switcher */}
-      <div className="p-4 border-b border-gray-700">
-        <select
-          value={activeProfile}
-          onChange={(e) => setActiveProfile(e.target.value as 'admin' | 'user' | 'contractor' | 'worker')}
-          className="p-2 bg-gray-800 border border-gray-700 rounded-lg text-white"
+    <div className="flex h-screen bg-gray-900 text-white relative">
+      {/* Leftmost Bar (Admin Profile and Settings) */}
+      <div className="w-1/12 p-4 border-r border-gray-700 flex flex-col">
+        {/* Admin Profile */}
+        <div className="flex items-center mb-6">
+          <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center mr-2">
+            <span className="text-sm font-semibold">{getInitials('Admin')}</span>
+          </div>
+          <span className="text-lg font-semibold"></span>
+        </div>
+
+        {/* Navigation Icons (Without Names) */}
+        <div className="flex flex-col space-y-4 mb-6">
+          <button className="text-gray-400 hover:text-white flex items-center justify-center" title="Dashboard">
+            <span className="text-2xl w-6 h-6 flex items-center justify-center">📊</span>
+          </button>
+          <button className="text-gray-400 hover:text-white flex items-center justify-center" title="Conversations">
+            <span className="text-2xl w-6 h-6 flex items-center justify-center">💬</span>
+          </button>
+          <button className="text-gray-400 hover:text-white flex items-center justify-center" title="Inboxes">
+            <span className="text-2xl w-6 h-6 flex items-center justify-center">📥</span>
+          </button>
+          <button className="text-gray-400 hover:text-white flex items-center justify-center" title="Labels">
+            <span className="text-2xl w-6 h-6 flex items-center justify-center">🏷️</span>
+          </button>
+          <button className="text-gray-400 hover:text-white flex items-center justify-center" title="Notifications">
+            <span className="text-2xl w-6 h-6 flex items-center justify-center">🔔</span>
+          </button>
+        </div>
+
+        {/* Settings/Logout */}
+        <div className="mt-auto flex justify-end">
+          <button
+            onClick={() => setShowLogout(!showLogout)}
+            className="text-gray-400 hover:text-white flex items-center justify-center"
+          >
+            <span className="text-2xl w-6 h-6 flex items-center justify-center">⚙️</span>
+          </button>
+          {showLogout && (
+            <div className="absolute mt-2 bg-gray-800 p-2 rounded-lg shadow-lg">
+              <button className="text-sm text-red-400 hover:text-red-300">Logout</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Second Bar (Inboxes and Labels) */}
+      <div className="w-1/6 p-4 border-r border-gray-700">
+        <h2 className="text-lg font-semibold mb-4">Inboxes</h2>
+        <ul className="mb-6">
+          <li className="mb-2 hover:bg-gray-800 p-2 rounded-lg cursor-pointer">General</li>
+          <li className="hover:bg-gray-800 p-2 rounded-lg cursor-pointer">Order</li>
+        </ul>
+        <h2 className="text-lg font-semibold mb-4">Labels</h2>
+        <ul className="mb-6">
+          <li
+            className={`mb-2 hover:bg-gray-800 p-2 rounded-lg cursor-pointer flex items-center ${selectedLabel === 'order_received' ? 'bg-gray-700' : ''}`}
+            onClick={() => handleLabelClick('order_received')}
+          >
+            <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>order_received
+          </li>
+          <li
+            className={`mb-2 hover:bg-gray-800 p-2 rounded-lg cursor-pointer flex items-center ${selectedLabel === 'order_billed' ? 'bg-gray-700' : ''}`}
+            onClick={() => handleLabelClick('order_billed')}
+          >
+            <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>order_billed
+          </li>
+          <li
+            className={`hover:bg-gray-800 p-2 rounded-lg cursor-pointer flex items-center ${selectedLabel === 'order_delivered' ? 'bg-gray-700' : ''}`}
+            onClick={() => handleLabelClick('order_delivered')}
+          >
+            <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2"></span>order_delivered
+          </li>
+        </ul>
+      </div>
+
+      {/* Messages Section */}
+      <div className="w-1/3 p-4 border-r border-gray-700 relative">
+        <button
+          onClick={() => setShowSearchModal(true)}
+          className="w-full p-2 mb-4 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="admin">Admin</option>
-          <option value="user">User</option>
-          <option value="contractor">Contractor</option>
-          <option value="worker">Worker</option>
-        </select>
-      </div>
-
-      {/* Conversations Table */}
-      <div className="w-1/4 p-4 border-r border-gray-700">
-        <h2 className="text-lg font-semibold mb-4">Conversations</h2>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-700">
-              <th className="text-left py-2">Participants</th>
-              <th className="text-left py-2">Type</th>
-              <th className="text-left py-2">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredConversations.map(conv => (
-              <tr key={conv.id} className="border-b border-gray-800 hover:bg-gray-800 cursor-pointer" onClick={() => setSelectedConversation(conv.id)}>
-                <td className="py-2 flex items-center">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-2">
-                    <span className="text-xs font-semibold">{getInitials(conv.participants.join(' '))}</span>
-                  </div>
-                  {conv.participants.join(', ')}
-                </td>
-                <td className="py-2">{conv.type}</td>
-                <td className="py-2">{conv.status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Messages List */}
-      <div className="w-1/4 p-4 border-r border-gray-700">
-        <input
-          type="text"
-          placeholder="Search for messages in conversation"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full p-2 mb-4 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+          Search messages in conversations
+        </button>
+        {showSearchModal && (
+          <div className="modal-overlay" onClick={() => setShowSearchModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && setShowSearchModal(false)}
+                placeholder="Search messages..."
+                className="w-full p-3 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+              />
+              <button
+                onClick={() => setShowSearchModal(false)}
+                className="mt-2 p-2 bg-blue-600 rounded-lg"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex justify-between items-center mb-2">
-          <h2 className="text-lg font-semibold">Messages</h2>
+          <h2 className="text-lg font-semibold">Conversations <span className="text-gray-400">Open</span></h2>
           <div className="flex space-x-2">
             <button onClick={toggleFilter} className="text-gray-400 hover:text-white" title={`Filter: ${filter}`}>
               ⏳
@@ -171,44 +281,72 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
         <div className="mb-4">
-          <span className="text-sm text-blue-400 border-b-2 border-blue-400 pb-1">All</span>
+          <span className="text-sm text-blue-400 border-b-2 border-blue-400 pb-1">
+            All <span className="text-gray-400">{filteredMessages.length}</span>
+          </span>
         </div>
         <ul>
-          {filteredMessages.map(msg => (
-            <li
-              key={msg.id}
-              className={`p-3 mb-2 rounded-lg cursor-pointer ${selectedConversation === msg.conversationId ? 'bg-gray-700' : 'bg-gray-800'}`}
-              onClick={() => setSelectedConversation(msg.conversationId)}
-            >
-              <div className="flex items-center">
-                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-2">
-                  <span className="text-xs font-semibold">{getInitials(msg.sender)}</span>
-                </div>
-                <div className="flex-1">
-                  <div className="flex justify-between">
-                    <span>{msg.sender}</span>
-                    <span className="text-xs text-gray-400">{msg.timestamp}</span>
+          {filteredMessages.map(msg => {
+            const conv = conversations.find(c => c.id === msg.conversationId);
+            return (
+              <li
+                key={msg.id}
+                className={`p-3 mb-2 rounded-lg cursor-pointer ${selectedConversation === msg.conversationId ? 'bg-gray-700' : 'bg-gray-800'}`}
+                onClick={() => setSelectedConversation(msg.conversationId)}
+              >
+                <div className="flex items-center">
+                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-2">
+                    <span className="text-xs font-semibold">{getInitials(msg.sender)}</span>
                   </div>
-                  <p className="text-sm text-gray-300">{msg.content.substring(0, 50)}...</p>
+                  <div className="flex-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">{msg.sender}</span>
+                      <span className="text-xs text-gray-400">{msg.timestamp}</span>
+                    </div>
+                    <p className="text-sm text-gray-300">{msg.content.substring(0, 30)}...</p>
+                  </div>
+                  {conv?.label && (
+                    <span className={`ml-2 px-2 py-1 rounded-full text-xs ${getLabelColor(conv.label)} text-white`}>
+                      {conv.label}
+                    </span>
+                  )}
                 </div>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       </div>
 
       {/* Chat Screen */}
-      <div className="w-2/4 p-4 flex flex-col">
+      <div className="w-5/12 p-4 flex flex-col">
         {selectedConversation ? (
           <>
             <div className="flex justify-between items-center mb-2">
-              <h2 className="text-lg font-semibold">{filteredConversations.find(conv => conv.id === selectedConversation)?.participants.join(' - ')}</h2>
-              <button
-                onClick={() => toggleResolved(selectedConversation)}
-                className={`px-3 py-1 rounded-lg text-sm ${conversationStates[selectedConversation] ? 'bg-green-500' : 'bg-red-500'}`}
+              <h2 className="text-lg font-semibold flex items-center">
+                {filteredConversations.find(conv => conv.id === selectedConversation)?.participants.join(' - ')}
+                <button
+                  onClick={() => handleCall(filteredConversations.find(conv => conv.id === selectedConversation)?.participants || [])}
+                  className="call-icon ml-2 text-lg"
+                  title="Call"
+                >
+                  📞
+                </button>
+              </h2>
+              <select
+                value={conversationStates[selectedConversation!] || 'Unresolved'}
+                onChange={(e) => {
+                  const newState = e.target.value;
+                  setConversationStates(prev => ({
+                    ...prev,
+                    [selectedConversation!]: newState,
+                  }));
+                }}
+                className={`p-1 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${conversationStates[selectedConversation!] === 'Unresolved' ? 'bg-red-500' : conversationStates[selectedConversation!] === 'Resolved' ? 'bg-green-500' : 'bg-orange-500'}`}
               >
-                {conversationStates[selectedConversation] ? 'Resolved' : 'Unresolved'}
-              </button>
+                <option value="Unresolved" className="bg-gray-800 text-white">Unresolved</option>
+                <option value="Resolved" className="bg-gray-800 text-white">Resolved</option>
+                <option value="Closed" className="bg-gray-800 text-white">Closed</option>
+              </select>
             </div>
             <div className="flex space-x-4 mb-4">
               <button
@@ -223,24 +361,40 @@ const Dashboard: React.FC = () => {
               >
                 Order Details
               </button>
+              <button
+                onClick={() => setChatView('profile')}
+                className={`text-sm ${chatView === 'profile' ? 'text-blue-400 border-b-2 border-blue-400 pb-1' : 'text-gray-400'}`}
+              >
+                Profile
+              </button>
             </div>
             <div className="flex-1 overflow-y-auto mb-4">
               {chatView === 'messages' ? (
                 selectedMessages.map(msg => (
-                  <div key={msg.id} className={`mb-4 flex ${msg.sender === activeProfile ? 'justify-end' : 'justify-start'}`}>
+                  <div key={msg.id} className={`mb-4 flex ${msg.sender === 'Admin' ? 'justify-end' : 'justify-start'}`}>
                     <div className="flex items-start">
-                      {msg.sender !== activeProfile && (
+                      {msg.sender !== 'Admin' && (
                         <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-2">
                           <span className="text-xs font-semibold">{getInitials(msg.sender)}</span>
                         </div>
                       )}
                       <div>
-                        <div className={`inline-block p-3 rounded-lg ${msg.sender === activeProfile ? 'bg-blue-600' : 'bg-gray-700'}`}>
-                          <p>{msg.content}</p>
+                        <div className={`p-3 rounded-lg ${msg.sender === 'Admin' ? 'bg-blue-600' : 'bg-gray-700'}`}>
+                          {msg.content && <p>{msg.content}</p>}
+                          {msg.attachmentUrl && (
+                            <img
+                              src={msg.attachmentUrl}
+                              alt={msg.attachment}
+                              className="mt-2 max-w-xs rounded-lg"
+                            />
+                          )}
+                          {msg.attachment && !msg.attachmentUrl && (
+                            <p className="text-xs text-gray-400 mt-1">Attachment: {msg.attachment}</p>
+                          )}
                         </div>
                         <p className="text-xs text-gray-400 mt-1">{msg.timestamp}</p>
                       </div>
-                      {msg.sender === activeProfile && (
+                      {msg.sender === 'Admin' && (
                         <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center ml-2">
                           <span className="text-xs font-semibold">{getInitials(msg.sender)}</span>
                         </div>
@@ -248,7 +402,7 @@ const Dashboard: React.FC = () => {
                     </div>
                   </div>
                 ))
-              ) : selectedOrderDetails ? (
+              ) : chatView === 'order' && selectedOrderDetails ? (
                 <div className="p-4 bg-gray-800 rounded-lg">
                   {selectedOrderDetails.items.map((item, index) => (
                     <p key={index} className="text-sm">{index + 1}. {item}</p>
@@ -257,8 +411,16 @@ const Dashboard: React.FC = () => {
                   <p className="text-sm">Shipping Charge: {selectedOrderDetails.shipping}</p>
                   <p className="text-sm">Net Payable: {selectedOrderDetails.netPayable}</p>
                 </div>
+              ) : chatView === 'profile' ? (
+                <div className="p-4 bg-gray-800 rounded-lg">
+                  <h3 className="text-md font-semibold mb-2">User Profile</h3>
+                  <p>Participant: {filteredConversations.find(conv => conv.id === selectedConversation)?.participants.join(', ')}</p>
+                  <p>Status: {filteredConversations.find(conv => conv.id === selectedConversation)?.status}</p>
+                  <p>Inbox: {filteredConversations.find(conv => conv.id === selectedConversation)?.inbox}</p>
+                  <p>Label: {filteredConversations.find(conv => conv.id === selectedConversation)?.label || 'N/A'}</p>
+                </div>
               ) : (
-                <p className="text-gray-400">No order details available.</p>
+                <p className="text-gray-400">Select a view to see details</p>
               )}
             </div>
             {chatView === 'messages' && (
@@ -266,9 +428,29 @@ const Dashboard: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Reply..."
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
                   className="flex-1 p-2 rounded-l-lg bg-gray-800 border border-gray-700 focus:outline-none"
                 />
-                <button className="p-2 bg-blue-600 rounded-r-lg">Send</button>
+                <label className="p-2 bg-gray-700 rounded-r-lg cursor-pointer flex items-center">
+                  <span className="text-white mr-1">📎</span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={handleAttachmentChange}
+                    accept="image/*"
+                  />
+                </label>
+                <button
+                  onClick={handleSendMessage}
+                  className="p-2 bg-blue-600 rounded-lg ml-2"
+                  disabled={!messageInput.trim() && !attachment}
+                >
+                  Send
+                </button>
+                {attachment && (
+                  <span className="ml-2 text-sm text-gray-400">Attached: {attachment.name}</span>
+                )}
               </div>
             )}
           </>
@@ -278,6 +460,27 @@ const Dashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Ensure modal overlay is above all content */}
+      {showSearchModal && <div className="modal-overlay" onClick={() => setShowSearchModal(false)}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && setShowSearchModal(false)}
+            placeholder="Search messages..."
+            className="w-full p-3 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            autoFocus
+          />
+          <button
+            onClick={() => setShowSearchModal(false)}
+            className="mt-2 p-2 bg-blue-600 rounded-lg"
+          >
+            Close
+          </button>
+        </div>
+      </div>}
     </div>
   );
 };
